@@ -18,15 +18,6 @@ app.add_typer(agent_app, name="agent")
 identity_app = typer.Typer(help="Identity and DID resolution")
 app.add_typer(identity_app, name="identity")
 
-market_app = typer.Typer(help="A2A Marketplace operations")
-app.add_typer(market_app, name="market")
-
-credit_app = typer.Typer(help="Institutional credit and loans")
-app.add_typer(credit_app, name="credit")
-
-stability_app = typer.Typer(help="LLM Stability and performance hub")
-app.add_typer(stability_app, name="stability")
-
 governance_app = typer.Typer(help="Protocol governance and proposals")
 app.add_typer(governance_app, name="governance")
 
@@ -92,8 +83,7 @@ def list_agents():
         table.add_column("Address", style="dim")
         table.add_column("AIS", style="magenta")
         table.add_column("Tier", style="green")
-        table.add_column("Stake (ITK)", style="yellow")
-        table.add_column("Status", style="white")
+        table.add_column("Status", style="yellow")
 
         for agent in agents:
             table.add_row(
@@ -101,7 +91,6 @@ def list_agents():
                 agent.get("eth_address", "N/A"),
                 str(agent.get("current_ais", 0)),
                 f"Tier {agent.get('verification_tier', 1)}",
-                str(agent.get("staked_itk", 0.0)),
                 "Active" if agent.get("is_active") else "Inactive"
             )
         console.print(table)
@@ -119,62 +108,56 @@ def agent_status(identifier: str):
         console.print(f"[bold cyan]Agent: {agent.get('alias')} ({agent.get('eth_address')})[/bold cyan]")
         console.print(f"XNS Handle: {agent.get('xns_handle') or 'None'}")
         console.print(f"AIS Score: [magenta]{agent.get('current_ais')}[/magenta]")
-        console.print(f"Staked Balance: [yellow]{agent.get('staked_itk', 0.0)} ITK[/yellow]")
         console.print(f"Entropy: [yellow]{agent.get('performance_entropy', 0):.4f}[/yellow]")
+        console.print(f"Grounding: [green]{agent.get('grounding_score', 0)}[/green]")
         console.print(f"Last Active: {agent.get('last_active_at')}")
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {str(e)}")
 
-@agent_app.command("provenance")
-def agent_provenance(address: str):
-    """View Forensic Provenance audit log for an agent."""
+@agent_app.command("handshake")
+def agent_handshake(
+    initiator: str = typer.Option(..., help="Initiator ETH address"),
+    target: str = typer.Option(..., help="Target ETH address")
+):
+    """Perform a trust handshake between two agents."""
     client = IntegrityClient()
+    payload = {
+        "initiator_eth_address": initiator,
+        "target_eth_address": target
+    }
     try:
-        with console.status(f"[bold blue]Fetching provenance for {address}..."):
-            logs = client.get(f"/v1/agent/{address}/provenance")
+        with console.status("[bold blue]Performing handshake..."):
+            result = client.post("/v1/agent/handshake", json_data=payload)
         
-        table = Table(title=f"Provenance Log: {address}")
-        table.add_column("Action", style="cyan")
-        table.add_column("Model", style="yellow")
-        table.add_column("Input Hash", style="dim")
-        table.add_column("Time", style="green")
-
-        for log in logs:
-            table.add_row(
-                log.get("action"),
-                log.get("model_used"),
-                log.get("input_hash")[:16] + "...",
-                log.get("created_at")
-            )
-        console.print(table)
+        decision = result.get("trust_decision", "UNKNOWN")
+        color = "green" if decision == "APPROVED" else "red"
+        console.print(f"Trust Decision: [bold {color}]{decision}[/bold {color}]")
+        console.print(f"Handshake Hash: [dim]{result.get('handshake_hash')}[/dim]")
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {str(e)}")
 
-@agent_app.command("audit")
-def agent_audit(address: str, platinum: bool = typer.Option(False, "--platinum", help="Request platinum manual audit")):
-    """Request institutional certification audit from Xibalba Solutions."""
+@agent_app.command("report")
+def report_metrics(
+    agent_id: str,
+    deal_id: str,
+    amount: float,
+    latency: int,
+    accuracy: float
+):
+    """Report transaction metrics for an agent."""
     client = IntegrityClient()
-    audit_type = "PLATINUM" if platinum else "AUTOMATED"
-    payload = {"agent_address": address, "audit_type": audit_type}
+    payload = {
+        "agent_id": agent_id,
+        "deal_id": deal_id,
+        "deal_amount": amount,
+        "latency_ms": latency,
+        "accuracy_score": accuracy
+    }
     try:
-        with console.status(f"[bold blue]Requesting {audit_type} audit..."):
-            result = client.post("/v1/audit/request", json_data=payload)
-        console.print(f"[bold green]Audit Workflow Initialized:[/bold green]")
-        console.print(f"Audit ID: [cyan]{result.get('audit_id')}[/cyan]")
-        console.print(f"Message: {result.get('message')}")
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {str(e)}")
-
-@agent_app.command("unstake")
-def agent_unstake(agent_address: str, amount: float):
-    """Unstake ITK tokens for an agent."""
-    client = IntegrityClient()
-    payload = {"amount_itk": amount}
-    try:
-        with console.status(f"[bold blue]Unstaking {amount} ITK..."):
-            result = client.post(f"/v1/agent/{agent_address}/unstake", json_data=payload)
-        console.print(f"[bold green]Unstake successful.[/bold green]")
-        console.print(f"Amount: [cyan]{result.get('amount')} ITK[/cyan]")
+        with console.status("[bold blue]Submitting report..."):
+            result = client.post("/v1/transactions/report", json_data=payload)
+        console.print(f"[bold green]Report accepted.[/bold green]")
+        console.print(f"New AIS Score: [magenta]{result.get('ais_score')}[/magenta]")
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {str(e)}")
 
@@ -182,146 +165,12 @@ def agent_unstake(agent_address: str, amount: float):
 def agent_stake(agent_address: str, amount: float):
     """Stake ITK tokens for an agent to increase verification tier."""
     client = IntegrityClient()
-    payload = {"amount_itk": amount}
+    payload = {"agent_address": agent_address, "amount": amount}
     try:
         with console.status(f"[bold blue]Staking {amount} ITK..."):
-            result = client.post(f"/v1/agent/{agent_address}/stake", json_data=payload)
+            result = client.post("/v1/agent/stake", json_data=payload)
         console.print(f"[bold green]Stake successful.[/bold green]")
-        console.print(f"Amount: [cyan]{result.get('amount')} ITK[/cyan]")
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {str(e)}")
-
-# --- Market Commands ---
-
-@market_app.command("tasks")
-def list_market_tasks():
-    """List all open autonomous tasks in the A2A marketplace."""
-    client = IntegrityClient()
-    try:
-        with console.status("[bold blue]Fetching market tasks..."):
-            tasks = client.get("/v1/market/tasks")
-        
-        table = Table(title="A2A Autonomous Marketplace")
-        table.add_column("Task ID", style="dim")
-        table.add_column("Title", style="cyan")
-        table.add_column("Reward (ITK)", style="green")
-        table.add_column("Min AIS", style="magenta")
-        table.add_column("Factory", style="yellow")
-
-        for t in tasks:
-            table.add_row(
-                t.get("task_id")[:12] + "...",
-                t.get("title"),
-                str(t.get("reward_itk")),
-                str(t.get("min_ais_required")),
-                "YES" if t.get("is_factory_contract") else "NO"
-            )
-        console.print(table)
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {str(e)}")
-
-@market_app.command("create")
-def create_task(
-    creator_id: str,
-    title: str,
-    reward: float,
-    min_ais: int = 500,
-    leverage: bool = typer.Option(False, "--leverage", help="Fund via institutional credit")
-):
-    """Create a new A2A market task."""
-    client = IntegrityClient()
-    payload = {
-        "creator_agent_id": creator_id,
-        "title": title,
-        "reward_itk": reward,
-        "min_ais_required": min_ais,
-        "description": f"CLI created task: {title}"
-    }
-    
-    endpoint = "/v1/market/task/fund-with-loan" if leverage else "/v1/market/task/create"
-    
-    try:
-        with console.status("[bold blue]Broadcasting task..."):
-            result = client.post(endpoint, json_data=payload)
-        console.print(f"[bold green]Task Created:[/bold green] {result.get('status')}")
-        console.print(f"Task ID: [cyan]{result.get('task_id')}[/cyan]")
-        if leverage:
-            console.print(f"Funding Loan ID: [yellow]{result.get('loan_id')}[/yellow]")
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {str(e)}")
-
-# --- Credit Commands ---
-
-@credit_app.command("profile")
-def credit_profile(address: str):
-    """Get the institutional credit profile for an agent."""
-    client = IntegrityClient()
-    try:
-        with console.status(f"[bold blue]Fetching credit profile for {address}..."):
-            res = client.get(f"/v1/agent/{address}/credit/profile")
-        
-        console.print(f"[bold cyan]Credit Score: {res.get('credit_score')}/1000[/bold cyan]")
-        console.print(f"Max Borrow Limit: [green]{res.get('max_borrow_limit')} ITK[/green]")
-        console.print(f"Total Borrowed: [yellow]{res.get('total_borrowed')} ITK[/yellow]")
-        
-        if res.get("active_loans"):
-            table = Table(title="Active Loans")
-            table.add_column("Loan ID", style="dim")
-            table.add_column("Principal", style="green")
-            table.add_column("APR", style="yellow")
-            table.add_column("Status", style="magenta")
-            
-            for loan in res.get("active_loans"):
-                table.add_row(
-                    loan.get("loan_id")[:12] + "...",
-                    str(loan.get("principal")),
-                    f"{loan.get('interest_rate')*100:.1f}%",
-                    loan.get("status")
-                )
-            console.print(table)
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {str(e)}")
-
-@credit_app.command("borrow")
-def borrow_itk(address: str, amount: float, days: int = 30):
-    """Apply for an institutional ITK loan."""
-    client = IntegrityClient()
-    payload = {"amount_itk": amount, "term_days": days}
-    try:
-        with console.status(f"[bold blue]Submitting loan application..."):
-            result = client.post(f"/v1/agent/{address}/credit/borrow", json_data=payload)
-        console.print(f"[bold green]Loan Approved:[/bold green] {result.get('status')}")
-        console.print(f"Loan ID: [cyan]{result.get('loan_id')}[/cyan]")
-        console.print(f"Interest Rate: {result.get('interest_rate')*100:.1f}%")
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {str(e)}")
-
-# --- Stability Commands ---
-
-@stability_app.command("benchmarks")
-def stability_benchmarks():
-    """Show live performance benchmarks for LLM models."""
-    client = IntegrityClient()
-    try:
-        with console.status("[bold blue]Fetching live benchmarks..."):
-            benchs = client.get("/v1/stability/benchmarks")
-        
-        table = Table(title="LLM Stability Leaderboard (Oracle Verified)")
-        table.add_column("Model", style="cyan")
-        table.add_column("Provider", style="dim")
-        table.add_column("Simulated AIS", style="magenta")
-        table.add_column("Stability", style="green")
-        table.add_column("Grounding", style="yellow")
-
-        for b in benchs:
-            table.add_row(
-                b.get("model_name"),
-                b.get("provider_name"),
-                str(b.get("simulated_ais")),
-                f"{b.get('stability_metric')*100:.1f}%",
-                f"{b.get('grounding_metric')*100:.1f}%"
-            )
-        console.print(table)
+        console.print(f"New Staked Balance: [cyan]{result.get('new_staked_balance')} ITK[/cyan]")
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {str(e)}")
 
